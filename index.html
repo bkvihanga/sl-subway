@@ -29,10 +29,25 @@
     border-radius: 20px; padding: 5px 14px; font-family: 'Fredoka', sans-serif; font-size: 16px;
     display: flex; align-items: center; gap: 7px; box-shadow: 0 4px 12px rgba(0,0,0,0.45);
   }
+  .profile-pill {
+    pointer-events: auto; cursor: pointer; border-color: #00f5d4; color: #00f5d4;
+    transition: transform 0.15s ease;
+  }
+  .profile-pill:hover { transform: scale(1.05); }
   .coin-dot {
     width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #fff;
     background: radial-gradient(circle at 30% 30%, #fff38f, #ffae00, #c87600); display: inline-block;
   }
+
+  /* LOGIN INPUT */
+  .login-input {
+    width: 100%; padding: 14px 18px; border-radius: 14px;
+    border: 2.5px solid #00bbf9; background: rgba(10, 18, 38, 0.95);
+    color: #fff; font-family: 'Fredoka', sans-serif; font-size: 18px;
+    text-align: center; outline: none; margin: 12px 0 16px;
+    user-select: text; -webkit-user-select: text; touch-action: auto;
+  }
+  .login-input:focus { border-color: #ffd166; box-shadow: 0 0 15px rgba(255, 209, 102, 0.35); }
 
   /* HOME SCREEN OVERLAY */
   #home-overlay {
@@ -255,6 +270,7 @@
 
 <div id="top-bar" class="top-currency-bar">
   <div class="currency-group">
+    <div id="btn-profile-switch" class="curr-pill profile-pill" title="Click to Change Player">👤 <span id="top-player">Player</span> ✏️</div>
     <div class="curr-pill">🔑 <span id="top-keys">5</span></div>
     <div class="curr-pill"><span class="coin-dot"></span> <span id="top-coins">600</span></div>
     <div class="curr-pill">🛹 <span id="top-boards">4</span></div>
@@ -262,6 +278,19 @@
   <div class="currency-group">
     <div class="curr-pill">⭐ x<span id="top-mult">1</span></div>
     <div class="curr-pill">🏆 <span id="top-best">0</span></div>
+  </div>
+</div>
+
+<!-- PLAYER LOGIN / PROFILE MODAL -->
+<div id="login-modal" class="modal-screen hidden" style="z-index: 55;">
+  <div class="card" style="max-width: 420px;">
+    <div class="world-tour-tag" style="margin-bottom: 10px;">🚆 KELANI VALLEY TOUR</div>
+    <h2 class="modal-title">PLAYER LOGIN</h2>
+    <p style="color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 6px;">
+      Enter your player name to save your Coins, Characters, Boards & High Score on your device!
+    </p>
+    <input id="player-name-input" type="text" class="login-input" maxlength="16" placeholder="Enter Your Name..." autocomplete="off" />
+    <button id="btn-login-play" class="btn-main">🚀 SAVE & CONTINUE</button>
   </div>
 </div>
 
@@ -407,41 +436,114 @@ window.addEventListener('DOMContentLoaded', function() {
   ];
 
   const UPGRADES = [
-    { id: 'jetpack',    name: 'Jetpack',        desc: 'Fly high above trains',       icon: '🚀', basePrice: 250 },
+    { id: 'jetpack',    name: 'Jetpack',        desc: 'Fly high above trains',        icon: '🚀', basePrice: 250 },
     { id: 'sneakers',   name: 'Super Sneakers', desc: 'High-jump onto train roofs',  icon: '👟', basePrice: 200 },
     { id: 'magnet',     name: 'Coin Magnet',    desc: 'Pull coins from all 3 lanes', icon: '🧲', basePrice: 200 },
     { id: 'multiplier', name: '2X Multiplier',  desc: 'Double your active score',    icon: '⭐', basePrice: 300 }
   ];
 
-  const SAVE_KEY = 'SL_SUBWAY_DELUXE_V3';
-  let saveData = {
-    coins: 600, keys: 5, highScore: 0, hoverboards: 4,
-    headstart250: 1, headstart1000: 0, missionMultiplier: 1,
-    unlockedChars: ['dash'], selectedChar: 'dash',
-    unlockedBoards: ['cruiser'], selectedBoard: 'cruiser',
-    upgradeLevels: { jetpack: 1, sneakers: 1, magnet: 1, multiplier: 1 }
-  };
+  /* PER-PLAYER PROFILE & LOCALSTORAGE SAVE SYSTEM */
+  const ACTIVE_USER_KEY = 'SL_SUBWAY_ACTIVE_PLAYER';
+  const SAVE_PREFIX = 'SL_SUBWAY_PROFILE_';
+  let currentPlayerName = '';
 
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      saveData = Object.assign({}, saveData, parsed);
-      saveData.upgradeLevels = Object.assign({ jetpack: 1, sneakers: 1, magnet: 1, multiplier: 1 }, parsed.upgradeLevels);
+  function getDefaultSaveData() {
+    return {
+      coins: 600, keys: 5, highScore: 0, hoverboards: 4,
+      headstart250: 1, headstart1000: 0, missionMultiplier: 1,
+      unlockedChars: ['dash'], selectedChar: 'dash',
+      unlockedBoards: ['cruiser'], selectedBoard: 'cruiser',
+      upgradeLevels: { jetpack: 1, sneakers: 1, magnet: 1, multiplier: 1 }
+    };
+  }
+
+  let saveData = getDefaultSaveData();
+
+  function getStorageKeyForPlayer(name) {
+    return SAVE_PREFIX + name.trim().toLowerCase();
+  }
+
+  function loadPlayerProfile(name) {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    currentPlayerName = cleanName;
+    try { localStorage.setItem(ACTIVE_USER_KEY, currentPlayerName); } catch (e) {}
+
+    const def = getDefaultSaveData();
+    try {
+      const raw = localStorage.getItem(getStorageKeyForPlayer(currentPlayerName));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        saveData = Object.assign({}, def, parsed);
+        saveData.unlockedChars = Array.isArray(parsed.unlockedChars) ? parsed.unlockedChars.slice() : ['dash'];
+        saveData.unlockedBoards = Array.isArray(parsed.unlockedBoards) ? parsed.unlockedBoards.slice() : ['cruiser'];
+        saveData.upgradeLevels = Object.assign({ jetpack: 1, sneakers: 1, magnet: 1, multiplier: 1 }, parsed.upgradeLevels);
+      } else {
+        saveData = def;
+        localStorage.setItem(getStorageKeyForPlayer(currentPlayerName), JSON.stringify(saveData));
+      }
+    } catch (e) {
+      saveData = def;
     }
-  } catch (e) {}
+    syncTopBar();
+  }
 
   function writeSave() {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(saveData)); } catch (e) {}
+    if (currentPlayerName) {
+      try { localStorage.setItem(getStorageKeyForPlayer(currentPlayerName), JSON.stringify(saveData)); } catch (e) {}
+    }
     syncTopBar();
   }
 
   function syncTopBar() {
+    document.getElementById('top-player').textContent = currentPlayerName || 'Player';
     document.getElementById('top-keys').textContent = saveData.keys;
     document.getElementById('top-coins').textContent = saveData.coins;
     document.getElementById('top-boards').textContent = saveData.hoverboards;
     document.getElementById('top-mult').textContent = saveData.missionMultiplier;
     document.getElementById('top-best').textContent = Math.floor(saveData.highScore);
+  }
+
+  const loginModal = document.getElementById('login-modal');
+  const playerNameInput = document.getElementById('player-name-input');
+
+  function openLoginModal() {
+    playerNameInput.value = currentPlayerName || '';
+    loginModal.classList.remove('hidden');
+    setTimeout(() => playerNameInput.focus(), 50);
+  }
+
+  function submitLogin() {
+    const val = playerNameInput.value.trim();
+    if (!val) {
+      showToast('⚠️ Please enter your name!');
+      playerNameInput.focus();
+      return;
+    }
+    loadPlayerProfile(val);
+    if (typeof buildPlayerMesh === 'function') buildPlayerMesh();
+    loginModal.classList.add('hidden');
+    showToast(`👋 Welcome, ${currentPlayerName}!`);
+  }
+
+  document.getElementById('btn-login-play').onclick = submitLogin;
+  playerNameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitLogin();
+    }
+  });
+  document.getElementById('btn-profile-switch').onclick = openLoginModal;
+
+  try {
+    const savedUser = localStorage.getItem(ACTIVE_USER_KEY);
+    if (savedUser && savedUser.trim()) {
+      loadPlayerProfile(savedUser);
+    } else {
+      openLoginModal();
+    }
+  } catch (e) {
+    openLoginModal();
   }
   syncTopBar();
 
@@ -1221,6 +1323,10 @@ window.addEventListener('DOMContentLoaded', function() {
 
   function triggerTapToPlay() {
     if (gameState !== 'MENU') return;
+    if (!currentPlayerName) {
+      openLoginModal();
+      return;
+    }
     sfx.init();
     sfx.whistle();
     document.getElementById('home-overlay').classList.add('hidden');
@@ -1303,6 +1409,7 @@ window.addEventListener('DOMContentLoaded', function() {
   }
 
   window.addEventListener('keydown', e => {
+    if (!loginModal.classList.contains('hidden')) return;
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') moveLane(-1);
     else if (e.code === 'ArrowRight' || e.code === 'KeyD') moveLane(1);
     else if (e.code === 'ArrowUp' || e.code === 'KeyW') triggerJump();
@@ -1355,6 +1462,10 @@ window.addEventListener('DOMContentLoaded', function() {
   /* STORE & UI */
   let currentTab = 'single';
   function openModalWithTab(tabName) {
+    if (!currentPlayerName) {
+      openLoginModal();
+      return;
+    }
     sfx.init();
     currentTab = tabName;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
@@ -1493,6 +1604,8 @@ window.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-go-shop').onclick = () => openModalWithTab('single');
 
   function returnHome() {
+    if (currentScore > saveData.highScore) saveData.highScore = Math.floor(currentScore);
+    writeSave();
     sfx.stopBGM(); gameState = 'MENU';
     document.getElementById('hud').style.display = 'none';
     document.getElementById('pause-modal').classList.add('hidden');
@@ -1504,7 +1617,13 @@ window.addEventListener('DOMContentLoaded', function() {
   }
   document.getElementById('btn-go-home').onclick = returnHome;
   document.getElementById('btn-quit').onclick = returnHome;
-  document.getElementById('btn-pause').onclick = () => { if (gameState === 'PLAYING') { gameState = 'PAUSED'; document.getElementById('pause-modal').classList.remove('hidden'); } };
+  document.getElementById('btn-pause').onclick = () => {
+    if (gameState === 'PLAYING') {
+      writeSave();
+      gameState = 'PAUSED';
+      document.getElementById('pause-modal').classList.remove('hidden');
+    }
+  };
   document.getElementById('btn-resume').onclick = () => { if (gameState === 'PAUSED') { gameState = 'PLAYING'; document.getElementById('pause-modal').classList.add('hidden'); } };
   document.getElementById('btn-use-board').onclick = activateHoverboard;
   document.getElementById('btn-mute').onclick = e => { sfx.muted = !sfx.muted; e.currentTarget.textContent = sfx.muted ? '🔇' : '🔊'; };
@@ -1697,6 +1816,7 @@ window.addEventListener('DOMContentLoaded', function() {
       }
       if (c.mesh.position.distanceTo(playerPickupVec) < 1.65) {
         saveData.coins++; runCoins++; currentScore += 25; sfx.coin();
+        writeSave();
         scene.remove(c.mesh); activeCoins.splice(i, 1); continue;
       }
       if (c.mesh.position.z > 18) { scene.remove(c.mesh); activeCoins.splice(i, 1); }
